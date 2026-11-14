@@ -2,6 +2,12 @@
 
 [中文](#中文) · [English](#english)
 
+<p align="center">
+  <img src="docs/competition-demo.png" alt="eLinex FPGA 实拍，包含 HDMI 图像、PyQt6 控制界面与开发板" width="529">
+  <br>
+  <em>中科亿海微赛道现场实拍 · Competition demo</em>
+</p>
+
 ## 中文
 
 2026 年全国大学生集成电路创新创业大赛中科亿海微赛道全国三等奖项目。系统从 OV5640 接收 RGB565 像素流，在 eLinex FPGA 上执行可切换的图像处理，并通过 HDMI 和 UDP 提供显示。PyQt6 上位机负责算法选择、预览、截图和录像。
