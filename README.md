@@ -2,17 +2,49 @@
 
 [中文](#中文) · [English](#english)
 
-![eLinex vision pipeline](docs/project-overview.png)
+```mermaid
+flowchart LR
+    A[OV5640 RGB565] --> B[SDRAM frame buffer]
+    B --> C[Video processing and mode selection]
+    C --> D[HDMI]
+    C -->|Base build| E[UDP packetizer]
+    E --> F[PyQt6 host]
+    F -. UART mode command .-> C
+```
 
 ## 中文
 
-2026 年全国大学生集成电路创新创业大赛国奖项目。系统从 OV5640 接收 RGB565 像素流，在 eLinex FPGA 上执行可切换的图像处理，并通过 HDMI 和 UDP 提供显示。PyQt6 上位机负责算法选择、预览、截图和录像。
+2026 年全国大学生集成电路创新创业大赛中科亿海微赛道全国三等奖项目。系统从 OV5640 接收 RGB565 像素流，在 eLinex FPGA 上执行可切换的图像处理，并通过 HDMI 和 UDP 提供显示。PyQt6 上位机负责算法选择、预览、截图和录像。
 
 ### 图像处理与传输
 
 1. **采集和处理**。OV5640 输出 RGB565，FPGA 按所选模式处理像素流。基础工程包含 YCbCr / HSV 转换、缩放、旋转、灰度形态学和 Sobel。增强工程加入引导滤波、磨皮和暗光增强。
-2. **显示与图传**。选中的视频流可经 SDRAM 帧缓存送往 HDMI，也可经 UDP 打包器发往上位机。上位机监听 UDP 8080，按 1024 × 600 大端 RGB565 组帧，以源端口 8191 识别帧首。接收线程组帧，后台线程转换像素格式，界面绘制最新图像。
+2. **显示与图传**。SDRAM 缓存摄像头输入，显示时钟域读取像素并执行算法。处理结果送 HDMI，基础版另将处理结果送入 UDP 打包器。上位机监听 UDP 8080，按 1024 × 600 小端 RGB565 组帧，以源端口 8191 识别帧首。接收线程组帧，后台线程转换像素格式，界面绘制最新图像。
 3. **模式切换**。上位机以 1 Mbaud 发送四字节 `AA MAIN SUB 55`。FPGA 解析命令，经跨时钟域握手传递控制字，在帧同步边界切换算法。上位机清空旧帧，等待下一帧首重新同步。
+
+### 算法与硬件实现
+
+图中的示例画面、曲线和公式用于解释算法原理。
+
+![基础版算法：颜色、几何、对比度与空间处理](docs/base-algorithms.png)
+
+| 基础版算法 | 硬件实现 |
+| --- | --- |
+| YCbCr / 灰度、HSV / 肤色分割 | 定点颜色变换。Y 供灰度算子使用，H/S 阈值生成肤色掩码 |
+| 2× / 4× 缩放 | 缩小由坐标抽样和有效窗口控制，放大使用行缓存和 3×3 均值平滑 |
+| 180° / 90° 旋转、仿射错切 | 180° 使用 OV5640 翻转寄存器。90° 和错切由 FPGA 通过 BRAM 地址重映射实现 |
+| 直方图均衡、HDR 色调映射 | 按帧统计灰度并映射亮度。HDR 使用定点倒数查表压缩动态范围 |
+| 灰度腐蚀与膨胀、Sobel、双边滤波 | 分别使用邻域最小/最大值、3×3 梯度阈值和空间/像素差联合加权 |
+
+![增强版算法：引导滤波、磨皮与暗光增强](docs/enhancement-algorithms.png)
+
+增强版先对 Y 和 Y² 求局部均值，由方差求引导系数 a、b，再对系数求局部均值并重建亮度。磨皮分支结合引导系数、原始亮度和双边平滑。暗光分支使用引导滤波估计照度，通过增益查表提升暗部并限制输出范围。
+
+### 独立数字识别 CNN
+
+![独立 CNN：RAW8 特征提取、定点推理与跨时钟域结果回传](docs/cnn-pipeline.png)
+
+固定 ROI 被分为 32 × 32 个单元，生成 1,024 个 6 位暗像素密度特征。75 MHz 前端经异步 FIFO 将特征送至 25 MHz 定点卷积和全连接分类器，结果返回前端进行会话校验和稳定化，再在帧边界提交。分类器忙时按整帧丢弃。仓库包含独立 RTL、仿真脚本和 163 个 RAW8 样本。板级集成需要统一工程提供视频顶层和约束。[CNN 源码与验证说明](fpga/cnn_standalone/)
 
 ### 工程入口
 
@@ -43,8 +75,20 @@ This national-prize entry from the 2026 China collegiate IC innovation competiti
 ### Video and control paths
 
 1. **Capture and processing.** The FPGA routes the camera stream through the selected algorithm. The base design covers color conversion, scaling, rotation, morphology, and Sobel. The enhancement design adds guided filtering, skin smoothing, and low-light enhancement.
-2. **HDMI and UDP.** The selected stream can go through SDRAM buffering to HDMI or directly to the UDP packetizer. The host listens on UDP port 8080 and assembles 1024 × 600 big-endian RGB565 frames. Source port 8191 marks the start of a frame. A background worker decodes the pixels and the UI displays the latest frame.
+2. **HDMI and UDP.** SDRAM buffers camera input before display-domain processing. The processed stream feeds HDMI and, in the base build, the UDP packetizer. The host listens on UDP port 8080 and assembles 1024 × 600 little-endian RGB565 frames. Source port 8191 marks the start of a frame. A background worker decodes the pixels and the UI displays the latest frame.
 3. **Mode control.** The host sends `AA MAIN SUB 55` over UART at 1 Mbaud. The FPGA transfers the decoded command across clock domains and applies it at a frame boundary. The host discards stale data and resynchronizes on the next frame marker.
+
+### Algorithm coverage
+
+Illustrative images, curves, and equations explain the algorithm concepts.
+
+The [base diagram](docs/base-algorithms.png) groups the selectable modes by hardware structure. Fixed-point YCbCr and HSV conversion support grayscale and skin segmentation. Scaling uses coordinate sampling, line buffering, and 3×3 smoothing. The OV5640 handles 180° rotation, while FPGA BRAM address remapping handles 90° rotation and affine shear. Frame histogram equalization and LUT-based HDR tone mapping handle contrast. Neighborhood min/max, thresholded Sobel gradients, and spatial/range-weighted averaging implement erosion/dilation, edge detection, and bilateral filtering.
+
+The [enhancement diagram](docs/enhancement-algorithms.png) follows local means of Y and Y² through guided coefficient estimation and luma reconstruction. Skin smoothing combines guided coefficients and bilateral filtering. Low-light enhancement estimates illumination, then applies a LUT-based gain and clamps the output.
+
+### Standalone digit CNN
+
+The [CNN pipeline](docs/cnn-pipeline.png) extracts 1,024 six-bit density tokens from a 32 × 32 grid over a fixed RAW8 ROI. A 75 MHz frontend sends tokens over an asynchronous FIFO to a 25 MHz fixed-point convolution and fully connected classifier. A return FIFO carries results for session checks and stabilization before frame-boundary commit. The extraction includes RTL, simulation scripts, and 163 RAW8 samples. Board integration requires the original video top and constraints. [CNN package](fpga/cnn_standalone/)
 
 ### Build and run
 
