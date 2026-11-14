@@ -2,16 +2,6 @@
 
 [中文](#中文) · [English](#english)
 
-```mermaid
-flowchart LR
-    A[OV5640 RGB565] --> B[SDRAM frame buffer]
-    B --> C[Video processing and mode selection]
-    C --> D[HDMI]
-    C -->|Base build| E[UDP packetizer]
-    E --> F[PyQt6 host]
-    F -. UART mode command .-> C
-```
-
 ## 中文
 
 2026 年全国大学生集成电路创新创业大赛中科亿海微赛道全国三等奖项目。系统从 OV5640 接收 RGB565 像素流，在 eLinex FPGA 上执行可切换的图像处理，并通过 HDMI 和 UDP 提供显示。PyQt6 上位机负责算法选择、预览、截图和录像。
@@ -70,7 +60,7 @@ python -m venv .venv
 
 ## English
 
-This national-prize entry from the 2026 China collegiate IC innovation competition processes OV5640 RGB565 video on an eLinex FPGA. It outputs video over HDMI and UDP and uses a PyQt6 desktop app for mode selection, preview, snapshots, and recording.
+This project won a national third prize in the 中科亿海微 (eLinex) track of the 2026 China collegiate IC innovation competition. It processes OV5640 RGB565 video on an eLinex FPGA. It outputs video over HDMI and UDP and uses a PyQt6 desktop app for mode selection, preview, snapshots, and recording.
 
 ### Video and control paths
 
